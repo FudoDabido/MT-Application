@@ -77,7 +77,7 @@ export default function GamePlanPage() {
       wake:    { done: !!wakeRec?.clocked_in_at,         late: !!wakeRec?.late_wakeup },
       plunge:  { done: !!dayPlan?.cold_plunge_done_at },
       train:   { done: trainRec?.status === 'completed' || trainRec?.status === 'passed', late: !!trainRec?.late_checkin },
-      shower:  { done: !!dayPlan?.shower_completed_at },
+      shower:  { done: !!dayPlan?.shower_completed_at, started: !!dayPlan?.shower_started_at },
       stretch: { done: stretchRec?.status === 'completed' || stretchRec?.status === 'passed' },
     });
     setLoading(false);
