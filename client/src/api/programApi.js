@@ -6,3 +6,9 @@ export const getProgramGrid = () => api.get('/program/grid');
 export const getTodayPlan = () => api.get('/program/today');
 export const resetProgram = () => api.post('/program/reset');
 export const logDayWorkout = (data) => api.post('/program/log-day', data);
+
+export const addStrike    = () => api.post('/program/strike');
+export const getCustomTasks  = () => api.get('/tasks');
+export const createTask      = (body) => api.post('/tasks', body);
+export const updateTask      = (id, body) => api.put(`/tasks/${id}`, body);
+export const deleteTask      = (id) => api.delete(`/tasks/${id}`);

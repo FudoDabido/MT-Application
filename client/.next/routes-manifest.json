@@ -63,6 +63,12 @@
       "namedRegex": "^/calendar(?:/)?$"
     },
     {
+      "page": "/chess-board",
+      "regex": "^/chess\\-board(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/chess\\-board(?:/)?$"
+    },
+    {
       "page": "/dashboard",
       "regex": "^/dashboard(?:/)?$",
       "routeKeys": {},
@@ -73,6 +79,12 @@
       "regex": "^/diary(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/diary(?:/)?$"
+    },
+    {
+      "page": "/game-plan",
+      "regex": "^/game\\-plan(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/game\\-plan(?:/)?$"
     },
     {
       "page": "/history",
@@ -145,6 +157,12 @@
       "regex": "^/statistics(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/statistics(?:/)?$"
+    },
+    {
+      "page": "/stats-hub",
+      "regex": "^/stats\\-hub(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/stats\\-hub(?:/)?$"
     },
     {
       "page": "/stretch",

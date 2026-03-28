@@ -1,284 +1,316 @@
+'use strict';
 const db = require('../db/database');
-const { generatePhases, getTodayPlan } = require('../services/programGeneratorService');
+const { generatePhases, getTodayPlan, getRunDistance, getRunNumber, getWeekPos, getDayType, getPhase, PHASES } = require('../services/programGeneratorService');
 
-// ── Unified "did workout happen on this date" check ───────────────────────────
-// Checks BOTH workout_logs (free logging) AND training_checkins (program check-in)
-function hasWorkoutOnDate(userId, dateStr) {
-  const inLogs = db.prepare(
-    `SELECT 1 FROM workout_logs WHERE user_id=? AND date(logged_at)=? LIMIT 1`
-  ).get(userId, dateStr);
-  if (inLogs) return true;
-  const inCheckins = db.prepare(
-    `SELECT 1 FROM training_checkins WHERE user_id=? AND date=? AND status='completed' LIMIT 1`
-  ).get(userId, dateStr);
-  return !!inCheckins;
-}
+// ─── helpers ─────────────────────────────────────────────────────────────────
 
 function getActiveAttempt(userId) {
   return db.prepare(`SELECT * FROM program_attempts WHERE user_id=? AND status='active' ORDER BY id DESC LIMIT 1`).get(userId);
 }
 
-function checkForFailure(attempt, userId) {
-  if (!attempt) return null;
-  const startDate = attempt.started_at.split(' ')[0];
-  const today = new Date().toISOString().split('T')[0];
-  const start = new Date(startDate);
-  const todayDate = new Date(today);
-  const daysSinceStart = Math.floor((todayDate - start) / 86400000);
-
-  for (let d = 0; d < daysSinceStart; d++) {
-    const checkDate = new Date(start.getTime() + d * 86400000);
-    const dateStr = checkDate.toISOString().split('T')[0];
-    if (!hasWorkoutOnDate(userId, dateStr)) {
-      db.prepare(`UPDATE program_attempts SET status='failed', ended_at=datetime('now') WHERE id=?`).run(attempt.id);
-      return { failed: true, failedOnDay: d + 1, failedDate: dateStr };
-    }
-  }
-  return null;
+function getTryNumber(userId) {
+  const last = db.prepare(`SELECT MAX(try_number) as n FROM program_attempts WHERE user_id=?`).get(userId);
+  return (last?.n || 0) + 1;
 }
+
+function getUserEquipment(userId) {
+  return db.prepare(`
+    SELECT ei.name FROM user_equipment ue
+    JOIN equipment_items ei ON ei.id = ue.equipment_id
+    WHERE ue.user_id=?
+  `).all(userId).map(r => r.name);
+}
+
+// ─── GET /program/status ──────────────────────────────────────────────────────
 
 function getStatus(req, res, next) {
   try {
-    const userId = req.user.id;
-    let attempt = getActiveAttempt(userId);
-    let failure = null;
-
-    if (attempt) {
-      failure = checkForFailure(attempt, userId);
-      if (failure) attempt = null;
-    }
+    const userId  = req.user.id;
+    const attempt = getActiveAttempt(userId);
 
     if (!attempt) {
-      const totalTries = db.prepare(`SELECT COUNT(*) as cnt FROM program_attempts WHERE user_id=?`).get(userId);
-      return res.json({ active: false, failure, try_number: totalTries.cnt, total_tries: totalTries.cnt });
+      const tryNum = getTryNumber(userId);
+      return res.json({ active: false, try_number: tryNum });
     }
 
-    const startDate = attempt.started_at.split(' ')[0];
-    const today = new Date().toISOString().split('T')[0];
+    const setup = db.prepare(`SELECT * FROM program_setup WHERE attempt_id=?`).get(attempt.id);
+    if (!setup) return res.json({ active: false, try_number: attempt.try_number });
 
-    const startsTomorrow = startDate > today;
+    const startDate  = attempt.started_at.split('T')[0];
+    const today      = new Date().toISOString().split('T')[0];
+    const diffDays   = Math.round((new Date(today) - new Date(startDate)) / 86400000);
+    const currentDay = Math.min(diffDays + 1, 60);
 
-    // Count completed days from BOTH tables
-    const completedRows = db.prepare(`
-      SELECT COUNT(*) as cnt FROM (
-        SELECT date(logged_at) as d FROM workout_logs
-          WHERE user_id=? AND date(logged_at) >= ? AND date(logged_at) <= ?
-        UNION
-        SELECT date as d FROM training_checkins
-          WHERE user_id=? AND date >= ? AND date <= ? AND status='completed'
-      ) t
-    `).get(userId, startDate, today, userId, startDate, today);
-
-    const completedDays = completedRows.cnt || 0;
-    const todayDone = hasWorkoutOnDate(userId, today);
-    const currentDay = startsTomorrow ? 0 : Math.min(completedDays + (todayDone ? 0 : 1), 60);
-
+    const phase     = getPhase(currentDay);
+    const weekPos   = getWeekPos(currentDay);
+    const dayType   = getDayType(weekPos);
     const todayPlan = getTodayPlan(userId, attempt.id);
-    const setup = db.prepare('SELECT * FROM program_setup WHERE attempt_id=? AND user_id=?').get(attempt.id, userId);
 
-    // Use stored times from program_setup so Schedule and Training pages stay in sync
-    const schedule = setup ? {
-      work_leave_time:   setup.work_leave_time,
-      wake_time:         setup.wake_time,
-      cold_plunge_time:  setup.cold_plunge_time,
-      train_time:        setup.train_time,
-      shower_time:       setup.shower_time,
-      bedtime:           setup.bedtime,
-      return_time:       setup.return_time,
-      stretch_time:      setup.stretch_time,
-     } : null;
+    // Strike check — look for failed training/runs in last window
+    checkForStrikes(userId, attempt);
 
     res.json({
-      active: true,
-      starts_tomorrow: startsTomorrow,
-      start_date: startDate,
-      try_number: attempt.try_number,
-      total_tries: attempt.try_number,
-      started_at: attempt.started_at,
-      current_day: currentDay,
-      completed_days: completedDays,
-      today_done: !!todayDone,
-      finished: completedDays >= 60,
-      today_plan: todayPlan,
-      has_setup: !!setup,
-      schedule,
+      active:       true,
+      try_number:   attempt.try_number,
+      attempt_id:   attempt.id,
+      current_day:  currentDay,
+      phase_number: phase?.phase,
+      phase_name:   phase?.name,
+      target_reps:  phase?.target_reps,
+      strikes:      attempt.strikes || 0,
+      day_type:     dayType,
+      today_plan:   todayPlan,
+      start_date:   startDate,
+      schedule: {
+        wake_time:        setup.wake_time,
+        cold_plunge_time: setup.cold_plunge_time,
+        train_time:       setup.train_time,
+        shower_time:      setup.shower_time,
+        stretch_time:     setup.stretch_time,
+        bedtime:          setup.bedtime,
+        work_leave_time:  setup.work_leave_time,
+        return_time:      setup.return_time,
+      },
     });
-  } catch(err) { next(err); }
+  } catch (e) { next(e); }
 }
+
+// ─── Strike logic ─────────────────────────────────────────────────────────────
+
+function checkForStrikes(userId, attempt) {
+  // Count failed training_checkins for this attempt not yet counted as strikes
+  // Simple approach: strikes = number of failed training_checkins + failed runs in this attempt
+  const startDate = attempt.started_at.split('T')[0];
+  const today     = new Date().toISOString().split('T')[0];
+
+  const failedTraining = db.prepare(`
+    SELECT COUNT(*) as cnt FROM training_checkins
+    WHERE user_id=? AND status='failed' AND date >= ? AND date <= ?
+  `).get(userId, startDate, today)?.cnt || 0;
+
+  const failedRuns = db.prepare(`
+    SELECT COUNT(*) as cnt FROM running_progress
+    WHERE user_id=? AND attempt_id=? AND completed_at IS NULL AND target_distance_km > 0
+      AND is_recovery_run=0
+  `).get(userId, attempt.id)?.cnt || 0;
+
+  // Note: we only update strikes when explicitly recording a new miss (see recordStrike)
+  // This function just validates state
+}
+
+function recordStrike(userId) {
+  const attempt = getActiveAttempt(userId);
+  if (!attempt) return;
+
+  const newStrikes = (attempt.strikes || 0) + 1;
+  db.prepare(`UPDATE program_attempts SET strikes=? WHERE id=?`).run(newStrikes, attempt.id);
+
+  if (newStrikes >= 3) {
+    // Reset program
+    db.prepare(`UPDATE program_attempts SET status='failed', ended_at=datetime('now') WHERE id=?`).run(attempt.id);
+    const tryNum = attempt.try_number + 1;
+    // New attempt starts fresh
+    const result = db.prepare(`
+      INSERT INTO program_attempts (user_id, try_number, started_at, status, strikes)
+      VALUES (?, ?, datetime('now'), 'active', 0)
+    `).run(userId, tryNum);
+
+    // Copy the setup to new attempt
+    const oldSetup = db.prepare(`SELECT * FROM program_setup WHERE attempt_id=?`).get(attempt.id);
+    if (oldSetup) {
+      db.prepare(`
+        INSERT INTO program_setup
+          (attempt_id, user_id, start_weight, start_height, phases_json,
+           work_leave_time, wake_time, cold_plunge_time, train_time, shower_time,
+           bedtime, return_time, stretch_time)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `).run(
+        result.lastInsertRowid, userId, oldSetup.start_weight, oldSetup.start_height,
+        oldSetup.phases_json, oldSetup.work_leave_time, oldSetup.wake_time,
+        oldSetup.cold_plunge_time, oldSetup.train_time, oldSetup.shower_time,
+        oldSetup.bedtime, oldSetup.return_time, oldSetup.stretch_time
+      );
+    }
+    return { reset: true, try_number: tryNum };
+  }
+  return { strikes: newStrikes };
+}
+
+// ─── GET /program/generate ────────────────────────────────────────────────────
 
 function generatePreview(req, res, next) {
   try {
-    const phases = generatePhases(req.user.id);
+    const equipment = getUserEquipment(req.user.id);
+    const phases = generatePhases(req.user.id, equipment);
     res.json({ phases });
-  } catch(err) { next(err); }
+  } catch (e) { next(e); }
 }
 
-// ── Time helpers ────────────────────────────────────────────────────────────
-function addMins(hhmm, mins) {
-  const [h, m] = hhmm.split(':').map(Number);
-  const total = ((h * 60 + m + mins) % 1440 + 1440) % 1440;
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-}
-
-function calcSchedule(leaveTime, returnTime, meditationMode = '1h_morning') {
-  if (!leaveTime) return {};
-
-  // Fixed morning routine
-  const wake          = '05:05';
-  const cold_plunge   = '05:10';
-  const train         = '05:20';
-  const shower        = '06:20';
-  const meditate_time = '06:35';
-  const bedtime       = addMins(wake, -(8 * 60)); // 21:05
-
-  // Evening block
-  let stretch_time, meditate_eve_time;
-  if (meditationMode === '2x30') {
-    stretch_time      = addMins(bedtime, -75);
-    meditate_eve_time = addMins(bedtime, -45);
-  } else {
-    stretch_time      = addMins(bedtime, -45);
-    meditate_eve_time = null;
-  }
-
-  return { wake_time: wake, cold_plunge_time: cold_plunge, train_time: train, shower_time: shower,
-           bedtime, stretch_time };
-}
+// ─── POST /program/setup ──────────────────────────────────────────────────────
 
 function setupProgram(req, res, next) {
   try {
     const userId = req.user.id;
-    const { start_weight, start_height, work_leave_time, return_time } = req.body;
+    const { work_leave_time, return_time, start_weight, start_height } = req.body;
 
+    // Abandon any active attempt
     db.prepare(`UPDATE program_attempts SET status='abandoned', ended_at=datetime('now') WHERE user_id=? AND status='active'`).run(userId);
 
-    const prev = db.prepare(`SELECT COUNT(*) as cnt FROM program_attempts WHERE user_id=?`).get(userId);
-    const tryNum = (prev.cnt || 0) + 1;
+    const tryNum = getTryNumber(userId);
+    const equipment = getUserEquipment(userId);
+    const phases = generatePhases(userId, equipment);
 
-    const attemptResult = db.prepare(`INSERT INTO program_attempts (user_id, try_number, started_at, status) VALUES (?, ?, date('now', '+1 day'), 'active')`).run(userId, tryNum);
-    const attemptId = attemptResult.lastInsertRowid;
+    // Calculate schedule from leave_time
+    const sched = calcSchedule(work_leave_time, return_time, userId);
 
-    const phases = generatePhases(userId);
+    // Save attempt
+    const attempt = db.prepare(`
+      INSERT INTO program_attempts (user_id, try_number, started_at, status, strikes)
+      VALUES (?, ?, date('now'), 'active', 0)
+    `).run(userId, tryNum);
 
-    const userRow = db.prepare(`SELECT meditation_mode FROM users WHERE id=?`).get(userId);
-    const sched = calcSchedule(work_leave_time, return_time, userRow?.meditation_mode || '1h_morning');
+    // Update user measurements
+    if (start_weight) db.prepare(`UPDATE users SET initial_weight=? WHERE id=?`).run(start_weight, userId);
+    if (start_height) db.prepare(`UPDATE users SET initial_height=? WHERE id=?`).run(start_height, userId);
 
     db.prepare(`
       INSERT INTO program_setup
         (attempt_id, user_id, start_weight, start_height, phases_json,
-         work_leave_time, wake_time, cold_plunge_time, train_time, shower_time, bedtime,
-         return_time, stretch_time)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         work_leave_time, wake_time, cold_plunge_time, train_time, shower_time,
+         bedtime, return_time, stretch_time)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
-      attemptId, userId, start_weight || null, start_height || null, JSON.stringify(phases),
-      work_leave_time || null,
-      sched.wake_time || null, sched.cold_plunge_time || null, sched.train_time || null,
-      sched.shower_time || null,
-      sched.bedtime || null,
-      return_time || null,
-      sched.stretch_time || null,
+      attempt.lastInsertRowid, userId,
+      start_weight || null, start_height || null,
+      JSON.stringify(phases),
+      sched.work_leave_time, sched.wake_time, sched.cold_plunge_time,
+      sched.train_time, sched.shower_time, sched.bedtime,
+      sched.return_time, sched.stretch_time
     );
 
-    if (start_weight || start_height) {
-      db.prepare(`UPDATE users SET initial_weight=COALESCE(?,initial_weight), initial_height=COALESCE(?,initial_height), updated_at=datetime('now') WHERE id=?`)
-        .run(start_weight || null, start_height || null, userId);
-    }
-
-    res.json({ success: true, try_number: tryNum, attempt_id: attemptId, phases });
-  } catch(err) { next(err); }
+    res.json({ ok: true, try_number: tryNum, schedule: sched });
+  } catch (e) { next(e); }
 }
+
+// ─── Schedule calculation ─────────────────────────────────────────────────────
+
+function addMins(hhmm, mins) {
+  if (!hhmm) return null;
+  const [h, m] = hhmm.split(':').map(Number);
+  const total = h * 60 + m + mins;
+  const nh = Math.floor(((total % 1440) + 1440) % 1440 / 60);
+  const nm = ((total % 1440) + 1440) % 1440 % 60;
+  return `${String(nh).padStart(2,'0')}:${String(nm).padStart(2,'0')}`;
+}
+
+function calcSchedule(workLeaveTime, returnTime, userId) {
+  // Sum custom morning tasks
+  const customMorning = db.prepare(
+    `SELECT COALESCE(SUM(duration_mins),0) as total FROM custom_tasks WHERE user_id=? AND time_of_day='morning'`
+  ).get(userId)?.total || 0;
+
+  // Mandatory morning: cold plunge 10 + training 60 + shower 15 = 85
+  const mandatoryMins = 85;
+  const totalMorning  = mandatoryMins + customMorning + 15; // 15 min buffer
+
+  // Wake time = leave_time - totalMorning
+  const wake_time        = addMins(workLeaveTime, -totalMorning);
+  const cold_plunge_time = wake_time;           // right at wake
+  const train_time       = addMins(wake_time, 10);
+  const shower_time      = addMins(train_time, 60);
+  const bedtime          = addMins(wake_time, -(7 * 60)); // 7h before wake = previous night
+  const stretch_time     = addMins(bedtime, -65);         // 65 min before bed
+
+  return {
+    work_leave_time: workLeaveTime,
+    return_time:     returnTime || null,
+    wake_time, cold_plunge_time, train_time, shower_time, bedtime, stretch_time,
+  };
+}
+
+// ─── GET /program/grid ────────────────────────────────────────────────────────
 
 function getGrid(req, res, next) {
   try {
-    const userId = req.user.id;
+    const userId  = req.user.id;
     const attempt = getActiveAttempt(userId);
-    if (!attempt) return res.json({ grid: [], active: false });
+    if (!attempt) return res.json({ days: [] });
 
-    checkForFailure(attempt, userId);
-    const freshAttempt = getActiveAttempt(userId);
-    if (!freshAttempt) return res.json({ grid: [], active: false });
+    const startDate = attempt.started_at.split('T')[0];
+    const today     = new Date().toISOString().split('T')[0];
 
-    const startDate = freshAttempt.started_at.split(' ')[0];
-    const start = new Date(startDate);
-    const today = new Date().toISOString().split('T')[0];
-    const grid = [];
+    const completedTraining = new Set(
+      db.prepare(`SELECT date FROM training_checkins WHERE user_id=? AND status IN ('completed','passed') AND date >= ?`)
+        .all(userId, startDate).map(r => r.date)
+    );
+    const failedTraining = new Set(
+      db.prepare(`SELECT date FROM training_checkins WHERE user_id=? AND status='failed' AND date >= ?`)
+        .all(userId, startDate).map(r => r.date)
+    );
+    const completedRuns = new Set(
+      db.prepare(`SELECT date(completed_at) as d FROM running_progress WHERE user_id=? AND attempt_id=? AND completed_at IS NOT NULL`)
+        .all(userId, attempt.id).map(r => r.d)
+    );
 
-    const setup = db.prepare('SELECT phases_json FROM program_setup WHERE attempt_id=?').get(freshAttempt.id);
-    const phases = setup ? JSON.parse(setup.phases_json) : [];
+    const days = [];
+    for (let i = 0; i < 60; i++) {
+      const d = new Date(startDate + 'T00:00:00');
+      d.setDate(d.getDate() + i);
+      const dateStr = d.toISOString().split('T')[0];
+      const dayNum  = i + 1;
+      const weekPos = getWeekPos(dayNum);
+      const dayType = getDayType(weekPos);
+      const isPast  = dateStr < today;
+      const isToday = dateStr === today;
 
-    for (let d = 0; d < 60; d++) {
-      const dayDate = new Date(start.getTime() + d * 86400000);
-      const dateStr = dayDate.toISOString().split('T')[0];
-      const dayNum = d + 1;
-      const phase = phases.find(p => dayNum >= p.day_start && dayNum <= p.day_end);
-      const dayInPhase = phase ? dayNum - phase.day_start + 1 : 0;
-      const weekInPhase = dayInPhase <= 7 ? 1 : 2;
-      const targetReps = weekInPhase === 1 ? 100 : 150;
-
-      let status = 'future';
-      if (dateStr < today) {
-        status = hasWorkoutOnDate(userId, dateStr) ? 'completed' : 'missed';
-      } else if (dateStr === today) {
-        status = hasWorkoutOnDate(userId, today) ? 'completed' : 'today';
+      let status = 'upcoming';
+      if (isToday) status = 'today';
+      else if (isPast) {
+        if (dayType === 'run' || dayType === 'recovery_run') {
+          status = completedRuns.has(dateStr) ? 'completed' : 'missed';
+        } else {
+          status = completedTraining.has(dateStr) ? 'completed'
+                 : failedTraining.has(dateStr)    ? 'missed'
+                 : 'missed';
+        }
       }
 
-      const weekPosG = ((dayNum - 1) % 7) + 1;
-      const dayTypeG = weekPosG === 7 ? 'recovery_run' : (weekPosG % 2 === 0 ? 'running' : 'strength');
-      grid.push({
-        day: dayNum,
-        date: dateStr,
-        status,
-        day_type: dayTypeG,
-        phase: phase ? phase.phase : null,
-        target_reps: targetReps,
-        exercises: phase ? phase.exercises : []
-      });
+      days.push({ day: dayNum, date: dateStr, day_type: dayType, status, phase: getPhase(dayNum)?.phase });
     }
 
-    res.json({ grid, active: true, try_number: freshAttempt.try_number, started_at: freshAttempt.started_at });
-  } catch(err) { next(err); }
+    res.json({ days, strikes: attempt.strikes || 0, try_number: attempt.try_number });
+  } catch (e) { next(e); }
 }
 
-function getToday(req, res, next) {
-  try {
-    const attempt = getActiveAttempt(req.user.id);
-    if (!attempt) return res.json({ active: false });
-    const plan = getTodayPlan(req.user.id, attempt.id);
-    res.json(plan || { active: false });
-  } catch(err) { next(err); }
-}
+// ─── POST /program/reset ──────────────────────────────────────────────────────
 
 function resetProgram(req, res, next) {
   try {
     const userId = req.user.id;
     db.prepare(`UPDATE program_attempts SET status='abandoned', ended_at=datetime('now') WHERE user_id=? AND status='active'`).run(userId);
-    res.json({ success: true, message: 'Program reset. You can now start fresh.' });
-  } catch(err) { next(err); }
+    res.json({ ok: true });
+  } catch (e) { next(e); }
 }
 
-function logDay(req, res, next) {
+// ─── POST /program/strike ─────────────────────────────────────────────────────
+
+function addStrike(req, res, next) {
   try {
-    const userId = req.user.id;
-    const { exercises } = req.body;
-
-    if (!exercises || !Array.isArray(exercises) || exercises.length === 0) {
-      return res.status(400).json({ error: 'exercises array required' });
-    }
-
-    const attempt = getActiveAttempt(userId);
-    if (!attempt) return res.status(404).json({ error: 'No active program' });
-
-    for (const ex of exercises) {
-      if (!ex.exercise_type_id) continue;
-      const notes = ex.succeeded === false ? 'failed' : 'succeeded';
-      db.prepare(`
-        INSERT INTO workout_logs (user_id, exercise_type_id, reps, notes, logged_at)
-        VALUES (?, ?, ?, ?, datetime('now'))
-      `).run(userId, ex.exercise_type_id, ex.reps_done || null, notes);
-    }
-
-    res.json({ success: true });
-  } catch(err) { next(err); }
+    const result = recordStrike(req.user.id);
+    res.json(result || { ok: true });
+  } catch (e) { next(e); }
 }
 
-module.exports = { getStatus, generatePreview, setupProgram, getGrid, getToday, resetProgram, logDay };
+// ─── GET /program/today ───────────────────────────────────────────────────────
+
+function getToday(req, res, next) {
+  try {
+    const userId  = req.user.id;
+    const attempt = getActiveAttempt(userId);
+    if (!attempt) return res.json({ plan: null });
+    const plan = getTodayPlan(userId, attempt.id);
+    res.json({ plan });
+  } catch (e) { next(e); }
+}
+
+module.exports = { getStatus, generatePreview, setupProgram, getGrid, resetProgram, addStrike, getToday, calcSchedule, recordStrike };

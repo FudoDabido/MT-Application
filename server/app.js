@@ -26,6 +26,7 @@ const diaryRoutes           = require('./routes/diary');
 const challengesRoutes      = require('./routes/challenges');
 const bandRoutes            = require('./routes/band');
 const workSessionRoutes     = require('./routes/workSession');
+const tasksRoutes           = require('./routes/tasks');
 
 const app = express();
 const isProd = process.env.NODE_ENV === 'production';
@@ -60,6 +61,7 @@ app.use('/api/diary',            diaryRoutes);
 app.use('/api/challenges',       challengesRoutes);
 app.use('/api/band',             bandRoutes);
 app.use('/api/work-sessions',     workSessionRoutes);
+app.use('/api/tasks',             tasksRoutes);
 
 // ── Production: serve built React client ──────────────────────────────────────
 if (isProd) {

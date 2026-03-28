@@ -803,6 +803,23 @@ function runMigrations() {
   // ─── workout_logs: weight tracking for Chess Board sessions ───────────────
   addCol('workout_logs', 'weight_kg', 'REAL');
 
+
+  // ─── New 60-day program v2: strikes + custom tasks ────────────────────────
+  addCol('program_attempts', 'strikes', 'INTEGER DEFAULT 0');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS custom_tasks (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id      INTEGER NOT NULL REFERENCES users(id),
+      name         TEXT NOT NULL,
+      icon         TEXT DEFAULT '📌',
+      duration_mins INTEGER NOT NULL DEFAULT 15,
+      time_of_day  TEXT NOT NULL,
+      sort_order   INTEGER DEFAULT 0,
+      created_at   TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   console.log('Migrations complete.');
 }
 

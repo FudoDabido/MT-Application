@@ -7,25 +7,25 @@ function addMins(hhmm, mins) {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
-function calcSchedule(leaveTime, returnTime, meditationMode = '1h_morning') {
+function calcSchedule(leaveTime, returnTime, userId) {
   if (!leaveTime) return {};
-  const mornMeditMins = meditationMode === '2x30' ? 30 : 60;
-  const wake    = addMins(leaveTime, -(60 + 15 + mornMeditMins + 10));
-  const train   = wake;
-  const shower  = addMins(wake, 60);
-  const meditate_time = addMins(shower, 15);
-  const bedtime = addMins(wake, -(8 * 60));
-  let stretch_time, meditate_eve_time;
-  if (meditationMode === '2x30') {
-    stretch_time      = addMins(bedtime, -75);
-    meditate_eve_time = addMins(bedtime, -45);
-  } else {
-    stretch_time      = addMins(bedtime, -45);
-    meditate_eve_time = null;
-  }
-  const cold_plunge = addMins(wake, 5); // 5 min after wake
-  return { wake_time: wake, cold_plunge_time: cold_plunge, train_time: train, shower_time: shower,
-           meditate_time, bedtime, stretch_time, meditate_eve_time };
+  // Sum custom morning tasks for this user
+  let customMorningMins = 0;
+  try {
+    const row = db.prepare(
+      "SELECT COALESCE(SUM(duration_mins),0) as total FROM custom_tasks WHERE user_id=? AND time_of_day='morning'"
+    ).get(userId);
+    customMorningMins = row?.total || 0;
+  } catch(e) {}
+  // Mandatory: cold plunge 10 + training 60 + shower 15 = 85 + 15 buffer = 100
+  const totalMorning    = 100 + customMorningMins;
+  const wake            = addMins(leaveTime, -totalMorning);
+  const cold_plunge     = wake;
+  const train_time      = addMins(wake, 10);
+  const shower_time     = addMins(train_time, 60);
+  const bedtime         = addMins(wake, -(7 * 60));
+  const stretch_time    = addMins(bedtime, -65);
+  return { wake_time: wake, cold_plunge_time: cold_plunge, train_time, shower_time, bedtime, stretch_time };
 }
 
 // GET /api/schedule/:date
@@ -53,7 +53,7 @@ function getDay(req, res, next) {
     const userRow = db.prepare(`SELECT meditation_mode FROM users WHERE id=?`).get(userId);
     const meditationMode = userRow?.meditation_mode || '1h_morning';
 
-    const schedule = calcSchedule(leaveTime, returnTime, meditationMode);
+    const schedule = calcSchedule(leaveTime, returnTime, userId);
     const isCustom = !!(override?.leave_time || override?.return_time);
 
     const todos = db.prepare(
