@@ -1,3 +1,4 @@
+'use client';
 import React, { useState, useEffect } from 'react';
 import Input from '../shared/Input.jsx';
 import Button from '../shared/Button.jsx';

@@ -1,1 +1,65 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
 @import "tailwindcss";
+
+/* ── Design tokens ─────────────────────────────────────────────────────────── */
+:root {
+  --bg:         #0a0a0a;
+  --card:       #111111;
+  --card-2:     #1a1a1a;
+  --border:     #222222;
+  --accent:     #34d399;
+  --accent-dim: #065f46;
+  --text:       #ffffff;
+  --text-2:     #9ca3af;
+  --text-3:     #4b5563;
+  --danger:     #f87171;
+  --warning:    #fbbf24;
+
+  /* Safe area insets */
+  --sat: env(safe-area-inset-top);
+  --sar: env(safe-area-inset-right);
+  --sab: env(safe-area-inset-bottom);
+  --sal: env(safe-area-inset-left);
+}
+
+/* ── Base ───────────────────────────────────────────────────────────────────── */
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+/* ── Native app feel ─────────────────────────────────────────────────────── */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button, a, [role="button"], label, select {
+  touch-action: manipulation;
+  cursor: pointer;
+}
+
+html, body {
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+p, span, h1, h2, h3, h4, h5, h6, li, td, th, input, textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.overflow-y-auto,
+.overflow-y-scroll,
+.overflow-x-auto,
+.overflow-x-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}

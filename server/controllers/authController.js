@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../db/database');
 const { signToken } = require('../services/jwtService');
 
-const SAFE_FIELDS = 'id, name, username, email, birth_date, initial_weight, initial_height, photo_path, is_admin, created_at';
+const SAFE_FIELDS = 'id, name, username, email, birth_date, initial_weight, initial_height, photo_path, is_admin, meditation_mode, created_at';
 
 async function register(req, res, next) {
   try {
@@ -30,7 +30,7 @@ async function register(req, res, next) {
     `).run(name, username, email, hash, birth_date || null, initial_weight || null, initial_height || null, isAdmin);
 
     const user = db.prepare(`SELECT ${SAFE_FIELDS} FROM users WHERE id=?`).get(result.lastInsertRowid);
-    const token = signToken({ id: user.id, email: user.email });
+    const token = signToken({ id: user.id, email: user.email, is_admin: user.is_admin || 0 });
     res.status(201).json({ token, user });
   } catch (err) {
     if (err.message && err.message.includes('UNIQUE')) {
@@ -49,7 +49,7 @@ async function login(req, res, next) {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
     const { password_hash, ...safeUser } = user;
-    const token = signToken({ id: user.id, email: user.email });
+    const token = signToken({ id: user.id, email: user.email, is_admin: user.is_admin || 0 });
     res.json({ token, user: safeUser });
   } catch (err) {
     next(err);
@@ -66,4 +66,13 @@ function me(req, res, next) {
   }
 }
 
-module.exports = { register, login, me };
+function listUsers(req, res, next) {
+  try {
+    const users = db.prepare(`SELECT ${SAFE_FIELDS} FROM users ORDER BY created_at DESC`).all();
+    res.json(users);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { register, login, me, listUsers };

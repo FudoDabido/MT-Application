@@ -1,3 +1,4 @@
+'use client';
 import React, { useState } from 'react';
 import Modal from './shared/Modal.jsx';
 import Input from './shared/Input.jsx';

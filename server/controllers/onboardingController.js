@@ -33,7 +33,7 @@ function getUserEquipment(req, res, next) {
 
 function completeOnboarding(req, res, next) {
   try {
-    const { training_location, equipment_ids } = req.body;
+    const { training_location, equipment_ids, meditation_mode } = req.body;
     // Remove old equipment
     db.prepare('DELETE FROM user_equipment WHERE user_id=?').run(req.user.id);
     // Add new equipment
@@ -41,6 +41,9 @@ function completeOnboarding(req, res, next) {
       const insert = db.prepare('INSERT OR IGNORE INTO user_equipment (user_id, equipment_item_id) VALUES (?, ?)');
       equipment_ids.forEach(id => insert.run(req.user.id, id));
     }
+    // Save meditation mode preference
+    const mode = meditation_mode === '2x30' ? '2x30' : '1h_morning';
+    db.prepare('UPDATE users SET meditation_mode=? WHERE id=?').run(mode, req.user.id);
     // Mark onboarding complete
     db.prepare(`
       INSERT INTO user_onboarding (user_id, completed, training_location, completed_at)

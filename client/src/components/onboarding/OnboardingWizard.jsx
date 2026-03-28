@@ -1,3 +1,4 @@
+'use client';
 import React, { useState, useEffect } from 'react';
 import { getEquipmentList, completeOnboarding } from '../../api/onboardingApi.js';
 import Button from '../shared/Button.jsx';
@@ -8,6 +9,7 @@ const LOCATION_OPTIONS = [
   { value: 'home_equipment', label: 'Home — With Equipment', desc: 'I have some gear at home', icon: '🏋️' },
   { value: 'gym', label: 'Gym', desc: 'I train at a gym', icon: '🏟️' },
 ];
+
 
 const CATEGORY_LABELS = {
   bodyweight: 'Bodyweight Tools',
@@ -20,15 +22,19 @@ const CATEGORY_LABELS = {
 };
 
 export default function OnboardingWizard({ onComplete }) {
-  const [step, setStep] = useState(1);
-  const [location, setLocation] = useState('');
+  const [step, setStep]               = useState(1);
+  const [location, setLocation]       = useState('');
   const [equipmentData, setEquipmentData] = useState(null);
-  const [selected, setSelected] = useState(new Set());
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [selected, setSelected]       = useState(new Set());
+  const [loading, setLoading]         = useState(false);
+  const [saving, setSaving]           = useState(false);
+
+  const showEquipmentStep = location && location !== 'no_equipment';
+  // Steps: 1=location, 2=equipment (only if has equipment)
+  const totalSteps = showEquipmentStep ? 2 : 1;
 
   useEffect(() => {
-    if (step === 2) {
+    if (step === 2 && showEquipmentStep) {
       setLoading(true);
       getEquipmentList().then(r => setEquipmentData(r.data)).finally(() => setLoading(false));
     }
@@ -57,6 +63,7 @@ export default function OnboardingWizard({ onComplete }) {
       await completeOnboarding({
         training_location: location,
         equipment_ids: location === 'no_equipment' ? [1] : Array.from(selected),
+        meditation_mode: '1h_morning',
       });
       onComplete();
     } catch(err) {
@@ -68,12 +75,17 @@ export default function OnboardingWizard({ onComplete }) {
 
   function handleLocationSelect(val) {
     setLocation(val);
-    if (val === 'no_equipment') {
-      setSelected(new Set([1])); // bodyweight only
+    if (val === 'no_equipment') setSelected(new Set([1]));
+  }
+
+  function handleNext() {
+    if (step === 1) {
+      if (showEquipmentStep) setStep(2);
+      else handleFinish();
     }
   }
 
-  const showEquipmentStep = location && location !== 'no_equipment';
+  const stepIndicators = Array.from({ length: totalSteps }, (_, i) => i + 1);
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-950 flex items-center justify-center p-4 overflow-y-auto">
@@ -81,11 +93,10 @@ export default function OnboardingWizard({ onComplete }) {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="text-4xl font-black text-emerald-400 mb-2">MT</div>
-          <h1 className="text-2xl font-bold text-white">Equipment Setup</h1>
-          <p className="text-gray-400 text-sm mt-1">Tell us what you have so we can suggest the right exercises</p>
-          {/* Steps indicator */}
+          <h1 className="text-2xl font-bold text-white">Setup</h1>
+          <p className="text-gray-400 text-sm mt-1">Let's get you configured before you start</p>
           <div className="flex items-center justify-center gap-2 mt-4">
-            {[1, 2].map(s => (
+            {stepIndicators.map(s => (
               <div key={s} className={`w-8 h-1 rounded-full transition-colors ${step >= s ? 'bg-emerald-500' : 'bg-gray-700'}`} />
             ))}
           </div>
@@ -116,18 +127,15 @@ export default function OnboardingWizard({ onComplete }) {
               ))}
             </div>
             <div className="mt-6 flex justify-end">
-              <Button
-                onClick={() => showEquipmentStep ? setStep(2) : handleFinish()}
-                disabled={!location || saving}
-              >
-                {saving ? 'Saving...' : showEquipmentStep ? 'Next: Select Equipment →' : 'Finish Setup'}
+              <Button onClick={handleNext} disabled={!location || saving}>
+                {saving ? 'Saving…' : showEquipmentStep ? 'Next →' : 'Finish Setup ✓'}
               </Button>
             </div>
           </div>
         )}
 
-        {/* Step 2: Equipment selection */}
-        {step === 2 && (
+        {/* Step 2: Equipment (only if not no_equipment) */}
+        {step === 2 && showEquipmentStep && (
           <div className="bg-gray-900 rounded-xl p-6">
             <h2 className="text-lg font-semibold mb-1 text-white">What equipment do you have?</h2>
             <p className="text-gray-400 text-sm mb-4">Select everything available to you — this filters your exercise library.</p>
@@ -139,16 +147,12 @@ export default function OnboardingWizard({ onComplete }) {
                 {Object.entries(CATEGORY_LABELS).map(([cat, label]) => {
                   const items = equipmentData.categories[cat];
                   if (!items || !items.length) return null;
-                  // Skip bodyweight category if no_equipment was selected
                   const allSelected = items.every(i => selected.has(i.id));
                   return (
                     <div key={cat}>
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide">{label}</h3>
-                        <button
-                          onClick={() => selectAll(items)}
-                          className="text-xs text-emerald-400 hover:underline"
-                        >
+                        <button onClick={() => selectAll(items)} className="text-xs text-emerald-400 hover:underline">
                           {allSelected ? '✓ All' : 'Select All'}
                         </button>
                       </div>
@@ -180,12 +184,13 @@ export default function OnboardingWizard({ onComplete }) {
               <div className="flex items-center gap-3">
                 <span className="text-xs text-gray-500">{selected.size} items selected</span>
                 <Button onClick={handleFinish} disabled={saving}>
-                  {saving ? 'Saving...' : 'Finish Setup'}
+                  {saving ? 'Saving…' : 'Finish Setup ✓'}
                 </Button>
               </div>
             </div>
           </div>
         )}
+
       </div>
     </div>
   );

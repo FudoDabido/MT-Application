@@ -1,9 +1,26 @@
 const router = require('express').Router();
-const { updateUser } = require('../controllers/usersController');
-const auth = require('../middleware/auth');
+const {
+  updateUser, uploadPhoto, getProfileStats, getUniversalScores, getWorkoutBreakdown,
+  getExerciseProgress, getMuscleVolume, getDailyScores, getMonthlyReport,
+  saveStreakReflection, getBadges, getUniversalScoresWithTrend,
+} = require('../controllers/usersController');
+const { getVapidPublicKey, savePushSubscription, deletePushSubscription } = require('../utils/pushNotifications');
+const auth   = require('../middleware/auth');
 const upload = require('../middleware/upload');
 
-router.patch('/:id', auth, updateUser);
-router.post('/:id/photo', auth, upload.single('photo'), require('../controllers/usersController').uploadPhoto);
+router.get('/stats',                  auth, getProfileStats);
+router.get('/scores',                 auth, getUniversalScoresWithTrend);
+router.get('/workout-breakdown',      auth, getWorkoutBreakdown);
+router.get('/exercise-progress',      auth, getExerciseProgress);
+router.get('/muscle-volume',          auth, getMuscleVolume);
+router.get('/daily-scores/:yearMonth', auth, getDailyScores);
+router.get('/monthly-report',         auth, getMonthlyReport);
+router.get('/badges',                 auth, getBadges);
+router.post('/streak-reflection',     auth, saveStreakReflection);
+router.get('/vapid-public-key',       getVapidPublicKey);
+router.post('/push-subscription',     auth, savePushSubscription);
+router.delete('/push-subscription',   auth, deletePushSubscription);
+router.patch('/:id',                  auth, updateUser);
+router.post('/:id/photo',             auth, upload.single('photo'), uploadPhoto);
 
 module.exports = router;

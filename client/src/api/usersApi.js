@@ -1,3 +1,12 @@
 import api from './axiosClient.js';
-export const updateUser = (id, data) => api.patch(`/users/${id}`, data);
-export const uploadPhoto = (id, formData) => api.post(`/users/${id}/photo`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+export const updateUser          = (id, data) => api.patch(`/users/${id}`, data);
+export const uploadPhoto         = (id, formData) => api.post(`/users/${id}/photo`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+export const getProfileStats     = () => api.get('/users/stats');
+export const getUniversalScores  = () => api.get('/users/scores');
+export const getWorkoutBreakdown = () => api.get('/users/workout-breakdown');
+export const getExerciseProgress = () => api.get('/users/exercise-progress');
+export const getMuscleVolume     = () => api.get('/users/muscle-volume');
+export const getDailyScores      = (yearMonth) => api.get(`/users/daily-scores/${yearMonth}`);
+export const getMonthlyReport    = (yearMonth) => api.get(`/users/monthly-report${yearMonth ? `?yearMonth=${yearMonth}` : ''}`);
+export const getBadges           = () => api.get('/users/badges');
+export const saveStreakReflection = (date, reflection) => api.post('/users/streak-reflection', { date, reflection });

@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const compression = require('compression');
 const errorHandler = require('./middleware/errorHandler');
 
 const authRoutes      = require('./routes/auth');
@@ -15,11 +16,21 @@ const programRoutes     = require('./routes/program');
 const calendarRoutes    = require('./routes/calendar');
 const dailyStatsRoutes  = require('./routes/dailyStats');
 const meditationRoutes  = require('./routes/meditation');
-const consistencyRoutes = require('./routes/consistency');
+const consistencyRoutes  = require('./routes/consistency');
+const wakePresenceRoutes    = require('./routes/wakePresence');
+const trainingCheckinRoutes = require('./routes/trainingCheckin');
+const stretchCheckinRoutes  = require('./routes/stretchCheckin');
+const scheduleRoutes        = require('./routes/schedule');
+const changeRequestsRoutes  = require('./routes/changeRequests');
+const diaryRoutes           = require('./routes/diary');
+const challengesRoutes      = require('./routes/challenges');
+const bandRoutes            = require('./routes/band');
+const workSessionRoutes     = require('./routes/workSession');
 
 const app = express();
 const isProd = process.env.NODE_ENV === 'production';
 
+app.use(compression());
 app.use(cors({
   origin: isProd ? false : 'http://localhost:5173',
   credentials: true,
@@ -39,11 +50,27 @@ app.use('/api/program',     programRoutes);
 app.use('/api/calendar',    calendarRoutes);
 app.use('/api/daily-stats', dailyStatsRoutes);
 app.use('/api/meditation',  meditationRoutes);
-app.use('/api/consistency', consistencyRoutes);
+app.use('/api/consistency',    consistencyRoutes);
+app.use('/api/wake-presence',     wakePresenceRoutes);
+app.use('/api/training-checkin', trainingCheckinRoutes);
+app.use('/api/stretch-checkin',  stretchCheckinRoutes);
+app.use('/api/schedule',         scheduleRoutes);
+app.use('/api/change-requests',  changeRequestsRoutes);
+app.use('/api/diary',            diaryRoutes);
+app.use('/api/challenges',       challengesRoutes);
+app.use('/api/band',             bandRoutes);
+app.use('/api/work-sessions',     workSessionRoutes);
 
 // ── Production: serve built React client ──────────────────────────────────────
 if (isProd) {
-  const clientDist = path.join(__dirname, '../client/dist');
+  // PC dashboard (Vite SPA) served at /pc/*
+  const pcDist = path.join(__dirname, '../client-pc/dist');
+  app.use('/pc', express.static(pcDist));
+  app.get('/pc', (req, res) => res.sendFile(path.join(pcDist, 'index.html')));
+  app.get('/pc/*', (req, res) => res.sendFile(path.join(pcDist, 'index.html')));
+
+  // Mobile app (Next.js static export) — catch-all
+  const clientDist = path.join(__dirname, '../client/out');
   app.use(express.static(clientDist));
   app.get('*', (req, res) => res.sendFile(path.join(clientDist, 'index.html')));
 }

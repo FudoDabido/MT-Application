@@ -74,6 +74,7 @@ function runMigrations() {
   // ─── Extend users ──────────────────────────────────────────────────────────
   addCol('users', 'username', 'TEXT');
   addCol('users', 'is_admin', 'INTEGER DEFAULT 0');
+  addCol('users', 'meditation_mode', "TEXT DEFAULT '1h_morning'");
 
   // ─── Extend exercise_types ─────────────────────────────────────────────────
   addCol('exercise_types', 'muscle_group', 'TEXT');
@@ -307,6 +308,9 @@ function runMigrations() {
   // ─── Stretching category support ──────────────────────────────────────────
   addCol('exercise_types', 'is_stretching', 'INTEGER DEFAULT 0');
 
+  // ─── Exercise descriptions (how-to instructions) ───────────────────────────
+  addCol('exercise_types', 'description', 'TEXT');
+
   // ─── program_setup: add return_time, evening schedule ─────────────────────
   addCol('program_setup', 'return_time', 'TEXT');
   addCol('program_setup', 'stretch_time', 'TEXT');
@@ -368,6 +372,433 @@ function runMigrations() {
       (221, 'Wrist Flexor Stretch', 'custom', 1, 'forearms', 1, '[]', 0, 2.5),
       (222, 'Ankle Circle', 'custom', 1, 'calves', 1, '[]', 0, 2.5);
   `);
+
+  // ─── Wake presence tracking ────────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS wake_presence (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      date TEXT NOT NULL,
+      scheduled_wake TEXT NOT NULL,
+      marked_at TEXT,
+      status TEXT DEFAULT 'pending',
+      UNIQUE(user_id, date)
+    );
+  `);
+
+  // ─── Training & Stretch checkin tables ────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS training_checkins (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      date TEXT NOT NULL,
+      scheduled_time TEXT NOT NULL,
+      checked_in_at TEXT,
+      status TEXT DEFAULT 'pending',
+      completed_at TEXT,
+      UNIQUE(user_id, date)
+    );
+
+    CREATE TABLE IF NOT EXISTS training_exercise_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      checkin_id INTEGER NOT NULL REFERENCES training_checkins(id),
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      exercise_type_id INTEGER NOT NULL,
+      exercise_name TEXT NOT NULL,
+      reps_done INTEGER,
+      video_path TEXT,
+      logged_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS stretch_checkins (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      date TEXT NOT NULL,
+      scheduled_time TEXT NOT NULL,
+      checked_in_at TEXT,
+      status TEXT DEFAULT 'pending',
+      completed_at TEXT,
+      UNIQUE(user_id, date)
+    );
+  `);
+
+  // ─── Meditation: slot tracking for 2x30 mode ──────────────────────────────
+  addCol('meditation_sessions', 'slot', "TEXT DEFAULT 'solo'");
+
+  // ─── Training: late checkin flag + per-set weight ──────────────────────────
+  addCol('training_checkins', 'late_checkin', 'INTEGER DEFAULT 0');
+  addCol('training_exercise_logs', 'weight_kg', 'REAL');
+
+  // ─── Day workout overrides (swap exercises for a specific date) ────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS day_workout_overrides (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      date TEXT NOT NULL,
+      slot TEXT NOT NULL,
+      exercise_type_id INTEGER NOT NULL,
+      exercise_name TEXT NOT NULL,
+      UNIQUE(user_id, date, slot)
+    );
+  `);
+
+  // ─── Schedule / day plans & todos ─────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS day_plans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      date TEXT NOT NULL,
+      leave_time TEXT,
+      return_time TEXT,
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id, date)
+    );
+
+    CREATE TABLE IF NOT EXISTS todos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      date TEXT NOT NULL,
+      text TEXT NOT NULL,
+      remind_at TEXT,
+      completed INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // ─── Diary & Lessons ──────────────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS diary_entries (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      date       TEXT NOT NULL,
+      did_best   TEXT,
+      what_did   TEXT,
+      proud      TEXT,
+      do_better  TEXT,
+      notes      TEXT,
+      locked     INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id, date)
+    );
+
+    CREATE TABLE IF NOT EXISTS lessons (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      title      TEXT NOT NULL,
+      topic      TEXT NOT NULL,
+      content    TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // ─── Presence tracker: clock-in/out + late flag ───────────────────────────
+  addCol('wake_presence', 'clocked_in_at',  'TEXT');
+  addCol('wake_presence', 'clocked_out_at', 'TEXT');
+  addCol('wake_presence', 'late_wakeup',    'INTEGER DEFAULT 0');
+
+  // ─── Calendar events ───────────────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS calendar_events (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id      INTEGER NOT NULL REFERENCES users(id),
+      title        TEXT NOT NULL,
+      date         TEXT NOT NULL,
+      time         TEXT,
+      duration_mins INTEGER,
+      notes        TEXT,
+      color        TEXT DEFAULT 'emerald',
+      remind_mins  INTEGER DEFAULT 0,
+      repeat_type  TEXT DEFAULT 'none',
+      created_at   TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // ─── Feature expansion: energy rating, PR weight, new tables ──────────────
+  addCol('training_checkins', 'energy_rating', 'INTEGER DEFAULT NULL');
+  addCol('personal_records',  'best_weight_kg', 'REAL');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS streak_reflections (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL,
+      date        TEXT NOT NULL,
+      reflection  TEXT NOT NULL,
+      streak_saved INTEGER DEFAULT 1,
+      created_at  TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS user_badges (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL,
+      badge_key  TEXT NOT NULL,
+      earned_at  TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id, badge_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS friend_requests (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      sender_id   INTEGER NOT NULL,
+      receiver_id INTEGER NOT NULL,
+      status      TEXT DEFAULT 'pending',
+      created_at  TEXT DEFAULT (datetime('now')),
+      UNIQUE(sender_id, receiver_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS challenges (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      challenger_id  INTEGER NOT NULL,
+      challenged_id  INTEGER NOT NULL,
+      start_date     TEXT NOT NULL,
+      end_date       TEXT NOT NULL,
+      status         TEXT DEFAULT 'active',
+      created_at     TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id      INTEGER NOT NULL,
+      endpoint     TEXT NOT NULL,
+      keys_p256dh  TEXT NOT NULL,
+      keys_auth    TEXT NOT NULL,
+      created_at   TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id, endpoint)
+    );
+  `);
+
+  // ─── Xiaomi Smart Band 9 Active biometric tables ──────────────────────────
+  db.exec(`
+    -- Band workout/sport sessions (50 sport modes) — defined first for FK use below
+    CREATE TABLE IF NOT EXISTS band_workout_sessions (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id            INTEGER NOT NULL REFERENCES users(id),
+      sport_type         TEXT NOT NULL,
+      started_at         TEXT NOT NULL,
+      ended_at           TEXT,
+      duration_secs      INTEGER,
+      distance_km        REAL,
+      calories_kcal      REAL,
+      avg_hr             INTEGER,
+      max_hr             INTEGER,
+      min_hr             INTEGER,
+      avg_pace_min_km    REAL,
+      avg_speed_kmh      REAL,
+      cadence_spm        REAL,
+      steps              INTEGER,
+      aerobic_effect     REAL,
+      anaerobic_effect   REAL,
+      training_load      REAL,
+      recovery_time_mins INTEGER,
+      source             TEXT NOT NULL DEFAULT 'band'
+                         CHECK(source IN ('band','manual')),
+      notes              TEXT,
+      created_at         TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_band_sessions_user ON band_workout_sessions(user_id, started_at);
+
+    -- Heart rate time-series (all-day monitoring + workout readings)
+    CREATE TABLE IF NOT EXISTS hr_readings (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id            INTEGER NOT NULL REFERENCES users(id),
+      recorded_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      bpm                INTEGER NOT NULL,
+      context            TEXT DEFAULT 'resting'
+                         CHECK(context IN ('resting','active','workout','sleep','manual')),
+      workout_session_id INTEGER REFERENCES band_workout_sessions(id),
+      source             TEXT NOT NULL DEFAULT 'band'
+                         CHECK(source IN ('band','manual')),
+      created_at         TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_hr_user_at ON hr_readings(user_id, recorded_at);
+
+    -- SpO2 / blood oxygen readings
+    CREATE TABLE IF NOT EXISTS spo2_readings (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id         INTEGER NOT NULL REFERENCES users(id),
+      recorded_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      spo2_pct        REAL NOT NULL,
+      alert_triggered INTEGER DEFAULT 0,
+      context         TEXT DEFAULT 'resting'
+                      CHECK(context IN ('resting','sleep','workout','manual')),
+      source          TEXT NOT NULL DEFAULT 'band'
+                      CHECK(source IN ('band','manual')),
+      created_at      TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_spo2_user_at ON spo2_readings(user_id, recorded_at);
+
+    -- Stress readings (manual ~1 min HRV measurement via band)
+    CREATE TABLE IF NOT EXISTS stress_readings (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id      INTEGER NOT NULL REFERENCES users(id),
+      recorded_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      stress_score INTEGER NOT NULL CHECK(stress_score BETWEEN 0 AND 100),
+      hrv_ms       REAL,
+      notes        TEXT,
+      source       TEXT NOT NULL DEFAULT 'band'
+                   CHECK(source IN ('band','manual')),
+      created_at   TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_stress_user_at ON stress_readings(user_id, recorded_at);
+
+    -- Skin temperature readings (24/7 continuous from band)
+    CREATE TABLE IF NOT EXISTS skin_temp_readings (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id      INTEGER NOT NULL REFERENCES users(id),
+      recorded_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      temp_c       REAL NOT NULL,
+      temp_delta_c REAL,
+      source       TEXT NOT NULL DEFAULT 'band'
+                   CHECK(source IN ('band','manual')),
+      created_at   TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_skin_temp_user_at ON skin_temp_readings(user_id, recorded_at);
+
+    -- Sleep sessions (one main sleep per night + naps tracked separately)
+    CREATE TABLE IF NOT EXISTS sleep_sessions (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id          INTEGER NOT NULL REFERENCES users(id),
+      date             TEXT NOT NULL,
+      sleep_start      TEXT,
+      sleep_end        TEXT,
+      total_mins       INTEGER,
+      deep_mins        INTEGER,
+      light_mins       INTEGER,
+      rem_mins         INTEGER,
+      awake_mins       INTEGER,
+      quality_score    INTEGER CHECK(quality_score BETWEEN 0 AND 100),
+      breathing_score  INTEGER CHECK(breathing_score BETWEEN 0 AND 100),
+      apnea_events     INTEGER DEFAULT 0,
+      respiratory_rate REAL,
+      is_nap           INTEGER DEFAULT 0,
+      sleep_animal     TEXT,
+      source           TEXT NOT NULL DEFAULT 'band'
+                       CHECK(source IN ('band','manual')),
+      notes            TEXT,
+      created_at       TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_sleep_user_date ON sleep_sessions(user_id, date);
+
+    -- Daily activity summary (steps, calories, distance, standing)
+    CREATE TABLE IF NOT EXISTS daily_activity (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id         INTEGER NOT NULL REFERENCES users(id),
+      date            TEXT NOT NULL,
+      steps           INTEGER DEFAULT 0,
+      distance_km     REAL DEFAULT 0,
+      calories_kcal   REAL DEFAULT 0,
+      standing_mins   INTEGER DEFAULT 0,
+      active_mins     INTEGER DEFAULT 0,
+      vitality_points REAL DEFAULT 0,
+      source          TEXT NOT NULL DEFAULT 'band'
+                      CHECK(source IN ('band','manual')),
+      created_at      TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id, date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_activity_user_date ON daily_activity(user_id, date);
+
+    -- Training fitness metrics snapshot (VO2 max, load, recovery — one per day)
+    CREATE TABLE IF NOT EXISTS training_fitness_metrics (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id            INTEGER NOT NULL REFERENCES users(id),
+      date               TEXT NOT NULL,
+      vo2_max            REAL,
+      training_load      REAL,
+      recovery_time_mins INTEGER,
+      aerobic_effect     REAL,
+      anaerobic_effect   REAL,
+      source             TEXT NOT NULL DEFAULT 'band'
+                         CHECK(source IN ('band','manual','calculated')),
+      created_at         TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id, date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_fitness_user_date ON training_fitness_metrics(user_id, date);
+
+    -- Band sync log (track each sync: what came in, device state)
+    CREATE TABLE IF NOT EXISTS band_sync_log (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id          INTEGER NOT NULL REFERENCES users(id),
+      synced_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      records_hr       INTEGER DEFAULT 0,
+      records_spo2     INTEGER DEFAULT 0,
+      records_stress   INTEGER DEFAULT 0,
+      records_sleep    INTEGER DEFAULT 0,
+      records_activity INTEGER DEFAULT 0,
+      records_workouts INTEGER DEFAULT 0,
+      device_id        TEXT,
+      firmware_ver     TEXT,
+      battery_pct      INTEGER,
+      notes            TEXT,
+      created_at       TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // ─── Schedule: shower/work/home check-in timestamps on day_plans ─────────
+  addCol('day_plans', 'shower_started_at',  'TEXT');
+  addCol('day_plans', 'shower_completed_at','TEXT');
+  addCol('day_plans', 'arrived_work_at',    'TEXT');
+  addCol('day_plans', 'lunch_started_at',   'TEXT');
+  addCol('day_plans', 'lunch_ended_at',     'TEXT');
+  addCol('day_plans', 'left_work_at',       'TEXT');
+  addCol('day_plans', 'arrived_home_at',    'TEXT');
+
+  // ─── Calendar events: soft-cancel flag ───────────────────────────────────
+  addCol('calendar_events', 'is_canceled', 'INTEGER DEFAULT 0');
+
+  // ─── Work timer (pause/resume) + home late penalty ────────────────────────
+  addCol('day_plans', 'work_paused_secs',  'INTEGER DEFAULT 0');
+  addCol('day_plans', 'work_paused_since', 'TEXT');
+  addCol('day_plans', 'home_late',         'INTEGER DEFAULT 0');
+
+  // ─── Calendar: event type (appointment vs reminder) ───────────────────────
+  addCol('calendar_events', 'event_type', "TEXT DEFAULT 'appointment'");
+
+  // ─── Muscle load history (recovery-aware programming) ────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS muscle_load_history (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id      INTEGER NOT NULL REFERENCES users(id),
+      date         TEXT NOT NULL,
+      muscle_group TEXT NOT NULL,
+      load_units   REAL NOT NULL DEFAULT 0,
+      UNIQUE(user_id, date, muscle_group)
+    );
+  `);
+
+    // ─── Seed comprehensive exercises + descriptions ─────────────────────────
+
+  // ── Running progress tracking ──────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS running_progress (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id             INTEGER NOT NULL REFERENCES users(id),
+      attempt_id          INTEGER NOT NULL REFERENCES program_attempts(id),
+      run_number          INTEGER NOT NULL,
+      target_distance_km  REAL    NOT NULL,
+      is_recovery_run     INTEGER NOT NULL DEFAULT 0,
+      completed_at        TEXT,
+      actual_distance_km  REAL,
+      UNIQUE(user_id, attempt_id, run_number)
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS work_sessions (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id          INTEGER NOT NULL REFERENCES users(id),
+      started_at       TEXT    NOT NULL,
+      ended_at         TEXT    NOT NULL,
+      duration_seconds INTEGER NOT NULL,
+      date             TEXT    NOT NULL
+    )
+  `);
+
+  const { seedExercises } = require('./exerciseSeeds');
+  seedExercises(db);
+
+  // ─── program_setup: cold plunge time ──────────────────────────────────────
+  addCol('program_setup', 'cold_plunge_time', 'TEXT');
+  addCol('day_plans', 'cold_plunge_done_at', 'TEXT');
 
   console.log('Migrations complete.');
 }

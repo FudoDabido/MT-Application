@@ -1,3 +1,4 @@
+'use client';
 import React, { useEffect, useState, useMemo } from 'react';
 import { getExercises } from '../../api/exercisesApi.js';
 import { getUserEquipment } from '../../api/onboardingApi.js';

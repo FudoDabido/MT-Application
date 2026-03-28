@@ -1,0 +1,21 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/page": "/",
+  "/(app)/calendar/page": "/calendar",
+  "/(app)/dashboard/page": "/dashboard",
+  "/(app)/diary/page": "/diary",
+  "/(app)/history/page": "/history",
+  "/(app)/leaderboard/page": "/leaderboard",
+  "/(app)/log-workout/page": "/log-workout",
+  "/(app)/meditate/page": "/meditate",
+  "/(app)/presence/page": "/presence",
+  "/(app)/profile/page": "/profile",
+  "/(app)/program/page": "/program",
+  "/(app)/records/page": "/records",
+  "/(app)/schedule/page": "/schedule",
+  "/(app)/statistics/page": "/statistics",
+  "/(app)/stretch/page": "/stretch",
+  "/(app)/training/page": "/training",
+  "/(auth)/login/page": "/login",
+  "/(auth)/register/page": "/register"
+}
