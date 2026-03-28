@@ -800,6 +800,9 @@ function runMigrations() {
   addCol('program_setup', 'cold_plunge_time', 'TEXT');
   addCol('day_plans', 'cold_plunge_done_at', 'TEXT');
 
+  // ─── workout_logs: weight tracking for Chess Board sessions ───────────────
+  addCol('workout_logs', 'weight_kg', 'REAL');
+
   console.log('Migrations complete.');
 }
 

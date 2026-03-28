@@ -475,6 +475,113 @@ function getUniversalScoresWithTrend(req, res, next) {
   } catch (err) { next(err); }
 }
 
+// ── Reps stats: per-exercise aggregates from training_exercise_logs ──────────
+function getRepsStats(req, res, next) {
+  try {
+    const userId = req.user.id;
+
+    const allTime = db.prepare(`
+      SELECT exercise_name as name,
+             SUM(reps_done) as total_reps,
+             COUNT(*) as total_sets,
+             MAX(weight_kg) as max_weight
+      FROM training_exercise_logs
+      WHERE user_id=? AND reps_done IS NOT NULL
+      GROUP BY exercise_name
+    `).all(userId);
+
+    const bestDay = db.prepare(`
+      SELECT exercise_name as name, MAX(day_reps) as best_day FROM (
+        SELECT exercise_name, date(logged_at) as d, SUM(reps_done) as day_reps
+        FROM training_exercise_logs WHERE user_id=? AND reps_done IS NOT NULL
+        GROUP BY exercise_name, d
+      ) GROUP BY exercise_name
+    `).all(userId);
+
+    const bestMonth = db.prepare(`
+      SELECT exercise_name as name, MAX(month_reps) as best_month FROM (
+        SELECT exercise_name, strftime('%Y-%m', logged_at) as m, SUM(reps_done) as month_reps
+        FROM training_exercise_logs WHERE user_id=? AND reps_done IS NOT NULL
+        GROUP BY exercise_name, m
+      ) GROUP BY exercise_name
+    `).all(userId);
+
+    const bestYear = db.prepare(`
+      SELECT exercise_name as name, MAX(year_reps) as best_year FROM (
+        SELECT exercise_name, strftime('%Y', logged_at) as y, SUM(reps_done) as year_reps
+        FROM training_exercise_logs WHERE user_id=? AND reps_done IS NOT NULL
+        GROUP BY exercise_name, y
+      ) GROUP BY exercise_name
+    `).all(userId);
+
+    const map = {};
+    for (const r of allTime) {
+      map[r.name] = { name: r.name, total_reps: r.total_reps, total_sets: r.total_sets, max_weight: r.max_weight, best_day: 0, best_month: 0, best_year: 0 };
+    }
+    for (const r of bestDay)   if (map[r.name]) map[r.name].best_day   = r.best_day;
+    for (const r of bestMonth) if (map[r.name]) map[r.name].best_month = r.best_month;
+    for (const r of bestYear)  if (map[r.name]) map[r.name].best_year  = r.best_year;
+
+    res.json(Object.values(map).sort((a, b) => b.total_reps - a.total_reps));
+  } catch (err) { next(err); }
+}
+
+// ── Running stats: aggregated from workout_logs (cardio), band sessions, running_progress ──
+function getRunningStats(req, res, next) {
+  try {
+    const userId = req.user.id;
+
+    const logRuns = db.prepare(`
+      SELECT wl.distance_km, wl.duration_secs, wl.logged_at
+      FROM workout_logs wl
+      JOIN exercise_types et ON et.id = wl.exercise_type_id
+      WHERE wl.user_id=? AND et.category='cardio' AND wl.distance_km IS NOT NULL AND wl.distance_km > 0
+      ORDER BY wl.logged_at DESC
+    `).all(userId);
+
+    const bandRuns = db.prepare(`
+      SELECT distance_km, duration_secs, started_at as logged_at
+      FROM band_workout_sessions
+      WHERE user_id=? AND distance_km IS NOT NULL AND distance_km > 0
+      ORDER BY started_at DESC
+    `).all(userId);
+
+    const progRuns = db.prepare(`
+      SELECT actual_distance_km as distance_km, NULL as duration_secs, completed_at as logged_at
+      FROM running_progress
+      WHERE user_id=? AND actual_distance_km IS NOT NULL AND actual_distance_km > 0
+      ORDER BY completed_at DESC
+    `).all(userId);
+
+    const allRuns = [...logRuns, ...bandRuns, ...progRuns];
+    const totalDistance = allRuns.reduce((s, r) => s + (r.distance_km || 0), 0);
+    const totalDuration = allRuns.reduce((s, r) => s + (r.duration_secs || 0), 0);
+    const bestRun = allRuns.reduce((best, r) => Math.max(best, r.distance_km || 0), 0);
+    const avgPace = totalDuration && totalDistance ? (totalDuration / 60) / totalDistance : null;
+
+    const monthly = db.prepare(`
+      SELECT strftime('%Y-%m', wl.logged_at) as month,
+             COUNT(*) as runs,
+             ROUND(SUM(wl.distance_km), 2) as distance,
+             SUM(wl.duration_secs) as duration
+      FROM workout_logs wl
+      JOIN exercise_types et ON et.id = wl.exercise_type_id
+      WHERE wl.user_id=? AND et.category='cardio' AND wl.distance_km > 0
+      GROUP BY month ORDER BY month DESC LIMIT 12
+    `).all(userId);
+
+    res.json({
+      total_runs: allRuns.length,
+      total_distance_km: Math.round(totalDistance * 100) / 100,
+      total_duration_secs: totalDuration,
+      best_run_km: bestRun,
+      avg_pace_min_per_km: avgPace ? Math.round(avgPace * 100) / 100 : null,
+      recent_runs: allRuns.slice(0, 20),
+      monthly_breakdown: monthly,
+    });
+  } catch (err) { next(err); }
+}
+
 // ── D1: Leaderboard with streak check (helper exported for leaderboard controller)
 function getStreakForUser(userId) {
   const reflections = db.prepare(`SELECT date FROM streak_reflections WHERE user_id=?`).all(userId).map(r => r.date);
@@ -494,4 +601,5 @@ module.exports = {
   getExerciseProgress, getMuscleVolume, getDailyScores, getMonthlyReport,
   saveStreakReflection, getBadges, checkAndAwardBadges,
   getUniversalScoresWithTrend, getStreakForUser,
+  getRepsStats, getRunningStats,
 };

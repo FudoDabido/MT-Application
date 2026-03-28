@@ -9,12 +9,13 @@ function updatePR(userId, exerciseTypeId, log) {
   const newSets = log.sets || null;
   const newDist = log.distance_km || null;
   const newDur = log.duration_secs || null;
+  const newWeight = log.weight_kg || null;
 
   if (!existing) {
     db.prepare(`
-      INSERT INTO personal_records (user_id, exercise_type_id, best_reps, best_sets, best_distance_km, best_duration_secs, log_id, achieved_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `).run(userId, exerciseTypeId, newReps, newSets, newDist, newDur, log.id);
+      INSERT INTO personal_records (user_id, exercise_type_id, best_reps, best_sets, best_distance_km, best_duration_secs, best_weight_kg, log_id, achieved_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).run(userId, exerciseTypeId, newReps, newSets, newDist, newDur, newWeight, log.id);
     return;
   }
 
@@ -23,6 +24,7 @@ function updatePR(userId, exerciseTypeId, log) {
   if (newSets !== null && (existing.best_sets === null || newSets > existing.best_sets)) updates.best_sets = newSets;
   if (newDist !== null && (existing.best_distance_km === null || newDist > existing.best_distance_km)) updates.best_distance_km = newDist;
   if (newDur !== null && (existing.best_duration_secs === null || newDur < existing.best_duration_secs)) updates.best_duration_secs = newDur; // lower is better for duration
+  if (newWeight !== null && (existing.best_weight_kg === null || newWeight > existing.best_weight_kg)) updates.best_weight_kg = newWeight;
 
   if (Object.keys(updates).length > 0) {
     const setClauses = Object.keys(updates).map(k => `${k}=?`).join(', ');

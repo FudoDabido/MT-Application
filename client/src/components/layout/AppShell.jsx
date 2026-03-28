@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Toaster } from 'react-hot-toast';
 import BottomNav from './BottomNav.jsx';
+import MenuDrawer from './MenuDrawer.jsx';
 import CheckinModal from '../CheckinModal.jsx';
 import OnboardingWizard from '../onboarding/OnboardingWizard.jsx';
 import { getPending } from '../../api/checkinsApi.js';
@@ -125,6 +126,7 @@ export default function AppShell({ children }) {
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [onboardingLoaded, setOnboardingLoaded] = useState(false);
   const [bedtime, setBedtime] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     getOnboardingStatus()
@@ -168,7 +170,8 @@ export default function AppShell({ children }) {
       >
         {children}
       </main>
-      <BottomNav />
+      <BottomNav onMenuOpen={() => setMenuOpen(true)} />
+      <MenuDrawer open={menuOpen} onClose={() => setMenuOpen(false)} />
       {checkinPending && <CheckinModal onClose={() => setCheckinPending(false)} />}
       {bedtime && <BedtimeGuard bedtime={bedtime} />}
     </div>

@@ -25,15 +25,15 @@ function getDay(req, res, next) {
   try {
     const userId = req.user.id;
     const { date } = req.params;
-    const logs = db.prepare(`
-      SELECT wl.id, wl.logged_at, wl.sets, wl.reps, wl.distance_km, wl.duration_secs, wl.notes,
+    const workout_logs = db.prepare(`
+      SELECT wl.id, wl.logged_at, wl.sets, wl.reps, wl.distance_km, wl.duration_secs, wl.weight_kg, wl.notes,
              et.name as exercise_name, et.category, et.muscle_group
       FROM workout_logs wl
       JOIN exercise_types et ON et.id = wl.exercise_type_id
       WHERE wl.user_id=? AND date(wl.logged_at)=?
       UNION ALL
       SELECT tel.id, tel.logged_at, NULL as sets, tel.reps_done as reps,
-             NULL as distance_km, NULL as duration_secs, NULL as notes,
+             NULL as distance_km, NULL as duration_secs, tel.weight_kg, NULL as notes,
              tel.exercise_name, et.category, et.muscle_group
       FROM training_exercise_logs tel
       LEFT JOIN exercise_types et ON et.id = tel.exercise_type_id
@@ -41,7 +41,14 @@ function getDay(req, res, next) {
       WHERE tel.user_id=? AND tc.date=? AND tc.status='completed'
       ORDER BY logged_at ASC
     `).all(userId, date, userId, date);
-    res.json({ date, logs });
+
+    const events = db.prepare(`
+      SELECT * FROM calendar_events
+      WHERE user_id=? AND date=? AND is_canceled=0
+      ORDER BY time ASC
+    `).all(userId, date);
+
+    res.json({ date, logs: workout_logs, workout_logs, events });
   } catch(err) { next(err); }
 }
 

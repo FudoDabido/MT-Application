@@ -2,7 +2,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, CalendarClock, Trophy, User } from 'lucide-react';
+import { Home, CalendarClock, Trophy, User, Menu } from 'lucide-react';
 
 const tabs = [
   { href: '/dashboard',   label: 'Today',    Icon: Home         },
@@ -11,8 +11,11 @@ const tabs = [
   { href: '/profile',     label: 'Me',       Icon: User         },
 ];
 
-export default function BottomNav() {
+const MENU_PAGES = ['/game-plan', '/chess-board', '/stats-hub'];
+
+export default function BottomNav({ onMenuOpen }) {
   const pathname = usePathname();
+  const menuActive = MENU_PAGES.some(p => pathname.startsWith(p));
 
   return (
     <nav
@@ -37,6 +40,18 @@ export default function BottomNav() {
           </Link>
         );
       })}
+      <button
+        onClick={onMenuOpen}
+        className="flex-1 flex flex-col items-center justify-center gap-1 py-2 min-h-[56px] transition-colors"
+      >
+        <Menu
+          className={`w-5 h-5 transition-colors ${menuActive ? 'text-[var(--accent)]' : 'text-[var(--text-3)]'}`}
+          strokeWidth={menuActive ? 2.5 : 1.8}
+        />
+        <span className={`text-[10px] font-medium transition-colors ${menuActive ? 'text-[var(--accent)]' : 'text-[var(--text-3)]'}`}>
+          Menu
+        </span>
+      </button>
     </nav>
   );
 }

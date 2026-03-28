@@ -10,3 +10,5 @@ export const getDailyScores      = (yearMonth) => api.get(`/users/daily-scores/$
 export const getMonthlyReport    = (yearMonth) => api.get(`/users/monthly-report${yearMonth ? `?yearMonth=${yearMonth}` : ''}`);
 export const getBadges           = () => api.get('/users/badges');
 export const saveStreakReflection = (date, reflection) => api.post('/users/streak-reflection', { date, reflection });
+export const getRepsStats         = () => api.get('/users/reps-stats');
+export const getRunningStats      = () => api.get('/users/running-stats');

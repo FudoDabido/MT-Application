@@ -4,14 +4,14 @@ const { updatePR } = require('../services/recordsService');
 function createLog(req, res, next) {
   try {
     const userId = req.user.id;
-    const { exercise_type_id, sets, reps, distance_km, duration_secs, notes, logged_at } = req.body;
+    const { exercise_type_id, sets, reps, distance_km, duration_secs, weight_kg, notes, logged_at } = req.body;
     if (!exercise_type_id) return res.status(400).json({ error: 'exercise_type_id required' });
     const videoPath = req.file ? `uploads/${req.file.filename}` : null;
 
     const result = db.prepare(`
-      INSERT INTO workout_logs (user_id, exercise_type_id, logged_at, sets, reps, distance_km, duration_secs, video_path, notes)
-      VALUES (?, ?, COALESCE(?, datetime('now')), ?, ?, ?, ?, ?, ?)
-    `).run(userId, exercise_type_id, logged_at || null, sets || null, reps || null, distance_km || null, duration_secs || null, videoPath, notes || null);
+      INSERT INTO workout_logs (user_id, exercise_type_id, logged_at, sets, reps, distance_km, duration_secs, weight_kg, video_path, notes)
+      VALUES (?, ?, COALESCE(?, datetime('now')), ?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, exercise_type_id, logged_at || null, sets || null, reps || null, distance_km || null, duration_secs || null, weight_kg || null, videoPath, notes || null);
 
     const log = db.prepare('SELECT * FROM workout_logs WHERE id=?').get(result.lastInsertRowid);
     updatePR(userId, exercise_type_id, log);
