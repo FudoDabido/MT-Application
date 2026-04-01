@@ -12,7 +12,7 @@
       "static/chunks/4bd1b696-c023c6e3521b1417.js",
       "static/chunks/255-29f3dcaae8f3cb4e.js",
       "static/chunks/main-app-5789f2f2cc72906e.js",
-      "static/css/780b07206ab453f1.css",
+      "static/css/68a5d7698af42557.css",
       "static/chunks/125-df0abc4bb98c77e3.js",
       "static/chunks/app/layout-57aa802c44381931.js"
     ],
@@ -73,7 +73,7 @@
       "static/chunks/main-app-5789f2f2cc72906e.js",
       "static/chunks/125-df0abc4bb98c77e3.js",
       "static/chunks/71-b0e3cdddbc056466.js",
-      "static/chunks/app/(app)/game-plan/page-383dc38e14afbfd6.js"
+      "static/chunks/app/(app)/game-plan/page-a4969ea9e712dd9f.js"
     ],
     "/(app)/history/page": [
       "static/chunks/webpack-5f15ffddb826c25b.js",
@@ -87,7 +87,9 @@
       "static/chunks/4bd1b696-c023c6e3521b1417.js",
       "static/chunks/255-29f3dcaae8f3cb4e.js",
       "static/chunks/main-app-5789f2f2cc72906e.js",
-      "static/chunks/app/(app)/leaderboard/page-7c48ea3126067364.js"
+      "static/chunks/125-df0abc4bb98c77e3.js",
+      "static/chunks/899-9f8e8a757a0a71d3.js",
+      "static/chunks/app/(app)/leaderboard/page-d4de1bfef9886e50.js"
     ],
     "/(app)/log-workout/page": [
       "static/chunks/webpack-5f15ffddb826c25b.js",
@@ -120,7 +122,8 @@
       "static/chunks/main-app-5789f2f2cc72906e.js",
       "static/chunks/125-df0abc4bb98c77e3.js",
       "static/chunks/619-ba102abea3e3d0e4.js",
-      "static/chunks/app/(app)/profile/page-838bbb7a68149853.js"
+      "static/chunks/899-9f8e8a757a0a71d3.js",
+      "static/chunks/app/(app)/profile/page-90aad49b0336f792.js"
     ],
     "/(app)/program/page": [
       "static/chunks/webpack-5f15ffddb826c25b.js",
@@ -144,7 +147,7 @@
       "static/chunks/255-29f3dcaae8f3cb4e.js",
       "static/chunks/main-app-5789f2f2cc72906e.js",
       "static/chunks/125-df0abc4bb98c77e3.js",
-      "static/chunks/app/(app)/schedule/page-aeeae10b072cecaa.js"
+      "static/chunks/app/(app)/schedule/page-2a99495bb091a806.js"
     ],
     "/(app)/statistics/page": [
       "static/chunks/webpack-5f15ffddb826c25b.js",

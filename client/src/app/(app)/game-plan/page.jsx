@@ -53,6 +53,7 @@ export default function GamePlanPage() {
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
   const [acting, setActing] = useState(null);
+  const [startsOn, setStartsOn] = useState(null);
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -70,6 +71,8 @@ export default function GamePlanPage() {
 
     const wakeRec  = wake.status   === 'fulfilled' ? wake.value.data?.record   : null;
     const trainRec = train.status  === 'fulfilled' ? train.value.data?.checkin : null;
+    const so = train.status === 'fulfilled' ? train.value.data?.starts_on : null;
+    if (so) setStartsOn(so);
     const stretchRec = stretch.status === 'fulfilled' ? stretch.value.data?.checkin : null;
     const dayPlan  = sched.status  === 'fulfilled' ? sched.value.data          : null;
 
@@ -154,6 +157,13 @@ export default function GamePlanPage() {
     <div className="flex flex-col gap-4 px-4" style={{ paddingTop: 'max(env(safe-area-inset-top), 16px)' }}>
       {/* Header */}
       <div>
+        {(() => {
+          const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+          const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          const d = (startsOn && startsOn > today) ? new Date(startsOn + 'T00:00:00') : new Date();
+          const dateLabel = `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+          return <p className="text-[var(--text-3)] text-xs">{dateLabel}</p>;
+        })()}
         <h1 className="text-2xl font-black text-white">Game Plan</h1>
         <p className="text-[var(--text-3)] text-sm">{doneCount} of {totalCheckable} tasks done today</p>
       </div>

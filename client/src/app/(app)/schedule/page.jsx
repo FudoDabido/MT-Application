@@ -5,7 +5,7 @@ import Card from '../../../design-system/Card.jsx';
 import Badge from '../../../design-system/Badge.jsx';
 import { getScheduleDay, coldPlungeDone, showerComplete, workStart, homeArrive } from '../../../api/scheduleApi.js';
 import { getTodayPresence, clockInPresence } from '../../../api/wakePresenceApi.js';
-import { getTodayTraining, checkinTraining, logExercise, completeTraining } from '../../../api/trainingCheckinApi.js';
+import { getTodayTraining, checkinTraining, logExercise, completeTraining, logRun } from '../../../api/trainingCheckinApi.js';
 import { getTodayStretch, checkinStretch, completeStretch } from '../../../api/stretchCheckinApi.js';
 import { getProgramStatus } from '../../../api/programApi.js';
 
@@ -23,6 +23,13 @@ function fmtTime(t) {
   if (!t) return '';
   const [h, m] = t.split(':').map(Number);
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+}
+function fmtDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 function taskScheduledTime(key, sched) {
   const s = sched?.schedule;
@@ -90,12 +97,69 @@ function ExerciseRow({ ex, logged, logState, onChange, onLog }) {
   );
 }
 
+/* ─── RunExpanded ─────────────────────────────────── */
+function RunExpanded({ training, onReload }) {
+  const [actualDist, setActualDist] = useState('');
+  const [logging, setLogging] = useState(false);
+  const plan = training?.plan;
+  const isRecovery = plan?.day_type === 'recovery_run';
+  const targetLabel = isRecovery
+    ? `${plan.target_duration_min ?? 15} min easy run`
+    : `${plan.target_distance_km} km`;
+
+  async function onLogRun() {
+    setLogging(true);
+    try {
+      await logRun({
+        attempt_id: plan.attempt_id,
+        current_day: plan.current_day,
+        actual_distance_km: actualDist ? parseFloat(actualDist) : null,
+      });
+      await onReload();
+    } catch (e) { console.error(e); }
+    setLogging(false);
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="rounded-xl p-4 bg-[var(--card-2)] text-center">
+        <p className="text-3xl font-black text-white">{targetLabel}</p>
+        <p className="text-xs text-[var(--text-3)] mt-1">
+          {isRecovery ? 'Recovery / Easy run' : `Run #${plan.run_number} · Phase ${plan.phase_number}`}
+        </p>
+      </div>
+      {!isRecovery && (
+        <input
+          type="number" inputMode="decimal"
+          placeholder={`Actual km (target: ${plan.target_distance_km})`}
+          className="w-full px-3 py-2 rounded-xl text-sm bg-[var(--card)] border border-[var(--border)] text-white"
+          value={actualDist}
+          onChange={e => setActualDist(e.target.value)}
+        />
+      )}
+      <button
+        onClick={onLogRun}
+        disabled={logging}
+        className="w-full py-3 rounded-xl font-bold text-sm bg-blue-600 text-white disabled:opacity-50"
+      >
+        {logging ? '…' : 'Log Run ✓'}
+      </button>
+    </div>
+  );
+}
+
 /* ─── TrainingExpanded ────────────────────────────── */
 function TrainingExpanded({ training, onReload }) {
   const [states, setStates] = useState({});
   const [completing, setCompleting] = useState(false);
+  const plan = training?.plan;
 
-  const exercises = training?.plan?.exercises || [];
+  // Run days — delegate to RunExpanded
+  if (plan?.day_type === 'run' || plan?.day_type === 'recovery_run') {
+    return <RunExpanded training={training} onReload={onReload} />;
+  }
+
+  const exercises = plan?.exercises || [];
   const loggedIds = new Set((training?.exercise_logs || []).map(l => l.exercise_type_id));
 
   function onChange(id, field, val) {
@@ -164,9 +228,60 @@ function CurrentCard({ taskKey, sched, training, stretch, onAction, onReload }) 
 
   /* Training — special expand */
   if (taskKey === 'training') {
+    const startsOn = training?.starts_on;
     const status = training?.checkin?.status;
     const isActive = status === 'active';
     const lateCheckin = !!training?.checkin?.late_checkin;
+    const isRunDay = training?.plan?.day_type === 'run' || training?.plan?.day_type === 'recovery_run';
+
+    // Pre-start preview — program hasn't started yet
+    if (startsOn) {
+      return (
+        <Card className="py-5 px-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">{meta.icon}</span>
+              <div>
+                <h2 className="text-xl font-black text-white">{meta.label}</h2>
+                <p className="text-xs text-emerald-400">Starts {fmtDate(startsOn)}</p>
+              </div>
+            </div>
+          </div>
+          {training?.plan && (
+            <div className="mt-3 p-3 rounded-xl bg-[var(--card-2)]">
+              <p className="text-xs text-[var(--text-3)] mb-2 uppercase tracking-wide">Day 1 Preview</p>
+              {isRunDay ? (
+                <p className="text-sm text-white">{training.plan.target_distance_km} km run</p>
+              ) : (
+                (training.plan.exercises || []).map(ex => (
+                  <p key={ex.id} className="text-sm text-[var(--text-2)] py-0.5">• {ex.name}</p>
+                ))
+              )}
+            </div>
+          )}
+        </Card>
+      );
+    }
+
+    // Run day — skip check-in, go straight to RunExpanded
+    if (isRunDay && !isActive) {
+      return (
+        <Card className="py-5 px-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🏃</span>
+              <div>
+                <h2 className="text-xl font-black text-white">Run</h2>
+                {scheduledTime && <p className="text-xs text-[var(--text-3)]">{fmtTime(scheduledTime)}</p>}
+              </div>
+            </div>
+            {late && <Badge variant="warning">LATE</Badge>}
+          </div>
+          <RunExpanded training={training} onReload={onReload} />
+        </Card>
+      );
+    }
+
     return (
       <Card className="py-5 px-4">
         <div className="flex items-center justify-between">
@@ -314,11 +429,13 @@ export default function SchedulePage() {
     await reload();
   }
 
-  /* Date header */
-  const now = new Date();
+  /* Date header — show program start date if not started yet */
   const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const dateStr = `${DAYS[now.getDay()]}, ${MONTHS[now.getMonth()]} ${now.getDate()}`;
+  const displayD = (training?.starts_on && training.starts_on > today)
+    ? new Date(training.starts_on + 'T00:00:00')
+    : new Date();
+  const dateStr = `${DAYS[displayD.getDay()]}, ${MONTHS[displayD.getMonth()]} ${displayD.getDate()}`;
 
   if (loading) {
     return (
@@ -345,8 +462,11 @@ export default function SchedulePage() {
       <div>
         <p className="text-[var(--text-3)] text-xs">{dateStr}</p>
         <h1 className="text-xl font-bold text-white">Schedule</h1>
-        {program?.active && (
-          <p className="text-xs text-[var(--text-3)]">Day {program.current_day ?? 1} / 60</p>
+        {program?.active && !program.starts_tomorrow && (
+          <p className="text-xs text-[var(--text-3)]">Day {program.current_day} / 60</p>
+        )}
+        {program?.starts_tomorrow && (
+          <p className="text-xs text-emerald-400 font-semibold">Day 1 starts tomorrow — get some rest 🌙</p>
         )}
       </div>
 

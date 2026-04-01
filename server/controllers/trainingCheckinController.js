@@ -435,8 +435,18 @@ async function logRun(req, res, next) {
     const dateStr = date || new Date().toISOString().split('T')[0];
     const result  = completeRun(userId, attempt_id, Number(current_day), dateStr, actual_distance_km ? Number(actual_distance_km) : null);
 
+    // Complete training checkin for this run day
+    const trainRow = db.prepare(
+      'SELECT ps.train_time FROM program_attempts pa JOIN program_setup ps ON ps.attempt_id = pa.id WHERE pa.id=?'
+    ).get(attempt_id);
+    db.prepare(
+      "INSERT OR IGNORE INTO training_checkins (user_id, date, scheduled_time, status) VALUES (?, ?, ?, 'pending')"
+    ).run(userId, dateStr, trainRow?.train_time || '07:00');
+    db.prepare(
+      "UPDATE training_checkins SET status='completed', checked_in_at=COALESCE(checked_in_at, datetime('now')), completed_at=datetime('now') WHERE user_id=? AND date=? AND status != 'completed'"
+    ).run(userId, dateStr);
+
     // Also mark workout as done for today
-    const db = require('../db/database');
     const existing = db.prepare('SELECT id FROM workout_logs WHERE user_id=? AND date(logged_at)=?').get(userId, dateStr);
     if (!existing) {
       db.prepare("INSERT INTO workout_logs (user_id, logged_at, session_type) VALUES (?, datetime('now'), 'running')").run(userId);

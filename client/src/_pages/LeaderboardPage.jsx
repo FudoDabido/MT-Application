@@ -168,8 +168,8 @@ export default function LeaderboardPage() {
   const rest  = users.slice(3);
 
   return (
-    <div className="flex flex-col gap-4 max-w-2xl pb-4">
-      <div className="px-4 pt-4">
+    <div className="flex flex-col gap-4 pb-24" style={{ paddingTop: 'max(env(safe-area-inset-top), 16px)' }}>
+      <div className="px-4">
         <h1 className="text-2xl font-bold">Leaderboard</h1>
         <p className="text-gray-400 text-sm mt-0.5">{monthName} · Ranked by personal records</p>
       </div>

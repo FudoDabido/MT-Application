@@ -36,6 +36,11 @@ export default function UserStatsDrawer({ userId, rank, onClose }) {
       .then(r => setData(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
+    // Lock background scroll on iOS
+    const main = document.querySelector('main');
+    const prev = main ? main.style.overflow : '';
+    if (main) main.style.overflow = 'hidden';
+    return () => { if (main) main.style.overflow = prev; };
   }, [userId]);
 
   if (!userId) return null;
@@ -46,7 +51,7 @@ export default function UserStatsDrawer({ userId, rank, onClose }) {
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/60" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-gray-950 rounded-t-3xl border-t border-gray-800 max-h-[85dvh] flex flex-col">
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-gray-950 rounded-t-3xl border-t border-gray-800 flex flex-col" style={{ maxHeight: "85dvh", paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="flex justify-center pt-3 pb-1 shrink-0">
           <div className="w-10 h-1 bg-gray-700 rounded-full" />
         </div>
@@ -58,7 +63,7 @@ export default function UserStatsDrawer({ userId, rank, onClose }) {
         ) : !data ? (
           <div className="text-center py-12 text-gray-500 text-sm">Failed to load stats.</div>
         ) : (
-          <div className="overflow-y-auto flex flex-col gap-5 px-5 pb-8 pt-2">
+          <div className="flex flex-col gap-5 px-5 pb-8 pt-2" style={{ overflowY: "scroll", WebkitOverflowScrolling: "touch", flex: 1, minHeight: 0 }}>
             {/* Header */}
             <div className="flex items-center gap-4">
               <div className="w-14 h-14 rounded-full bg-gray-800 flex items-center justify-center overflow-hidden shrink-0">
@@ -115,9 +120,13 @@ export default function UserStatsDrawer({ userId, rank, onClose }) {
             </div>
 
             {/* Personal Records */}
-            {data.records.length > 0 && (
-              <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Personal Records</div>
+            <div>
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Personal Records</div>
+              {data.records.length === 0 ? (
+                <div className="bg-gray-900 rounded-2xl px-4 py-6 text-center text-gray-600 text-sm">
+                  No records yet — log some exercises!
+                </div>
+              ) : (
                 <div className="bg-gray-900 rounded-2xl overflow-hidden divide-y divide-gray-800">
                   {data.records.map(rec => (
                     <div key={rec.id} className="flex items-center justify-between px-4 py-3">
@@ -126,8 +135,8 @@ export default function UserStatsDrawer({ userId, rank, onClose }) {
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
       </div>

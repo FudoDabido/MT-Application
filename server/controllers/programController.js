@@ -16,7 +16,7 @@ function getTryNumber(userId) {
 function getUserEquipment(userId) {
   return db.prepare(`
     SELECT ei.name FROM user_equipment ue
-    JOIN equipment_items ei ON ei.id = ue.equipment_id
+    JOIN equipment_items ei ON ei.id = ue.equipment_item_id
     WHERE ue.user_id=?
   `).all(userId).map(r => r.name);
 }
@@ -36,10 +36,11 @@ function getStatus(req, res, next) {
     const setup = db.prepare(`SELECT * FROM program_setup WHERE attempt_id=?`).get(attempt.id);
     if (!setup) return res.json({ active: false, try_number: attempt.try_number });
 
-    const startDate  = attempt.started_at.split('T')[0];
-    const today      = new Date().toISOString().split('T')[0];
-    const diffDays   = Math.round((new Date(today) - new Date(startDate)) / 86400000);
-    const currentDay = Math.min(diffDays + 1, 60);
+    const startDate     = attempt.started_at.split('T')[0];
+    const today         = new Date().toISOString().split('T')[0];
+    const diffDays      = Math.round((new Date(today) - new Date(startDate)) / 86400000);
+    const startsTomorrow = diffDays === -1;
+    const currentDay    = startsTomorrow ? 0 : Math.min(diffDays + 1, 60);
 
     const phase     = getPhase(currentDay);
     const weekPos   = getWeekPos(currentDay);
@@ -50,10 +51,11 @@ function getStatus(req, res, next) {
     checkForStrikes(userId, attempt);
 
     res.json({
-      active:       true,
-      try_number:   attempt.try_number,
-      attempt_id:   attempt.id,
-      current_day:  currentDay,
+      active:          true,
+      starts_tomorrow: startsTomorrow,
+      try_number:      attempt.try_number,
+      attempt_id:      attempt.id,
+      current_day:     currentDay,
       phase_number: phase?.phase,
       phase_name:   phase?.name,
       target_reps:  phase?.target_reps,

@@ -58,7 +58,7 @@ function getExercisesForSlot(slot, equipmentNames, limit = 8) {
   if (equipmentNames && equipmentNames.length > 0) {
     // Include bodyweight (required_equipment IS NULL or empty) + user equipment
     equipFilter = `AND (
-      et.required_equipment IS NULL OR et.required_equipment = '[]' OR et.required_equipment = ''
+      et.required_equipment IS NULL OR et.required_equipment = 'null' OR et.required_equipment = '[]' OR et.required_equipment = ''
       OR ${equipmentNames.map(() => `et.required_equipment LIKE ?`).join(' OR ')}
     )`;
     equipParams = equipmentNames.map(e => `%${e}%`);
@@ -197,7 +197,15 @@ function getTodayPlan(userId, attemptId, targetDate = null) {
     }
   }
   const coreEx = getExerciseForSlot('core', corePool);
-  const exercises = [...mainExercises, ...(coreEx ? [coreEx] : [])].filter(Boolean);
+  const rawExercises = [...mainExercises, ...(coreEx ? [coreEx] : [])].filter(Boolean);
+
+  // Attach sets/reps based on phase target_reps (total / 4 exercises)
+  const targetReps = phase?.target_reps || 100;
+  const repsPerEx  = Math.round(targetReps / 4);
+  // sets × reps_per_set combos: phase1→3×8, phase2→4×12, phase3→5×15
+  const setsRepsMap = { 100: { sets: 3, reps: 8 }, 200: { sets: 4, reps: 12 }, 300: { sets: 5, reps: 15 } };
+  const { sets, reps } = setsRepsMap[targetReps] || { sets: 3, reps: Math.ceil(repsPerEx / 3) };
+  const exercises = rawExercises.map(ex => ({ ...ex, sets, reps }));
 
   return { ...base, exercises };
 }
